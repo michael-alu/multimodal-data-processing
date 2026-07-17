@@ -1,8 +1,6 @@
 """Tests for the training pipeline.
 
-Builds schema-valid feature CSVs of the exact shape Taps and Tedla will produce (4 members x 3
-expressions x 6 augmentations; 4 members x 2 phrases x 4 augmentations) and drives `main` over
-them, so the pipeline is proven before the real CSVs land.
+Builds schema-valid feature CSVs of the shape Taps and Tedla will produce and drives main over them.
 """
 
 import numpy as np
@@ -106,8 +104,7 @@ def test_uses_the_expected_fold_counts(features, capsys):
 
 
 def test_reported_metrics_come_from_cv_not_from_training_data(features, capsys):
-    """A model scoring its own training data reads ~1.00 and is meaningless. The printed numbers
-    must be the grouped-CV ones."""
+    """A model scoring its own training data reads about 1.00 and is meaningless."""
     img, _, models = features
     train.main(_argv(features))
     out = capsys.readouterr().out

@@ -1,19 +1,17 @@
-"""End-to-end tests for the CLI simulation.
+"""End to end tests for the CLI simulation.
 
-Uses the real gate and real decision policy with faked extractors and models, so the transaction
-flow is verified today rather than on demo night.
+Uses the real decision policy with faked extractors and models.
 """
 
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from src.audio.extract import AudioTooShort
 from src.images.extract import FaceNotFound
 from src.cli.app import AuthApp, main
 from src.models.decision import ModalityResult, Stage
-from src.models.recommender import Recommendation, StubRecommender
+from src.models.recommender import Recommendation, Recommender, StubRecommender
 
 REGISTRY = {"michael": "C001", "taps": "C002", "anthony": "C003", "tedla": "C004"}
 
@@ -41,7 +39,7 @@ class CountingExtractor:
         return np.zeros(4)
 
 
-class CountingRecommender:
+class CountingRecommender(Recommender):
     def __init__(self):
         self.calls = []
 
@@ -93,8 +91,7 @@ def test_authorized_transaction_narrates_all_three_stages():
 
 
 def test_unknown_face_is_denied_and_never_asks_for_a_voice():
-    """The flow must stop at the face. Asking an intruder to speak is a wasted round trip and
-    contradicts the diagram."""
+    """The flow must stop at the face, as in the assignment diagram."""
     audio = CountingExtractor()
     app = build(ModalityResult("unknown", 0.99), ModalityResult("taps", 0.9), audio_extractor=audio)
     decision, out = run(app)

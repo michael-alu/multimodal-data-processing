@@ -1,9 +1,8 @@
-"""Tests for the face/voice biometric models.
+"""Tests for the face and voice models.
 
-The centrepiece is `test_grouped_cv_does_not_leak_augmentations`, which builds data with *no*
-member signal at all — only a per-photo signature — and shows that a naive random split scores
-near-perfect on it while the grouped split correctly scores near chance. That is the failure mode
-these models are exposed to, so it is worth demonstrating rather than asserting.
+test_grouped_cv_does_not_leak_augmentations builds data with no member signal at all, only a
+per-photo signature, and shows a naive random split scoring near perfect on it while the grouped
+split correctly scores near chance.
 """
 
 import numpy as np
@@ -84,12 +83,8 @@ def test_separable_members_are_learned():
 
 
 def test_grouped_cv_does_not_leak_augmentations():
-    """No member signal, only a per-photo signature.
-
-    An honest evaluation must score at chance here: having seen five augmentations of a photo
-    tells you nothing about a *different* photo of that person. A random split instead lets the
-    model match the photo's signature and read the member off it.
-    """
+    """Having seen five augmentations of a photo tells you nothing about a different photo of
+    that person, so an honest evaluation must score at chance here."""
     df = _table(member_signal=0.0, source_signal=3.0)
     X, y, groups = df[FEATS].to_numpy(), df["member"].to_numpy(), df["source_file"].to_numpy()
 
@@ -134,8 +129,8 @@ def test_cross_validate_needs_at_least_two_groups():
 
 
 def test_fold_that_trains_without_a_member_is_rejected():
-    """Unbalanced groups can strand a member outside every training set — that must not pass
-    silently as a low score; it is a broken evaluation."""
+    """Unbalanced groups can strand a member outside every training set. That is a broken
+    evaluation, not a low score."""
     df = _table(3.0, 0.2)
     # Leave tedla with a single source, so a 3-fold split must train some fold without him.
     thin = df[(df["member"] != "tedla") | (df["source_file"] == "tedla_src0.jpg")]

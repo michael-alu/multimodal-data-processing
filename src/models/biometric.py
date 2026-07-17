@@ -1,21 +1,11 @@
 """Face recognition and voiceprint verification.
 
-Both tasks are the same shape — given a feature vector, say which member this is and how
-confident we are — so they share one implementation, differing only in which columns they read
-and how many groups the cross-validation has.
+Both answer the same question, "which member is this", so they share one class and differ only in
+which feature columns they read.
 
-On honest evaluation
---------------------
-The augmentations are not independent samples. Six augmented copies of `taps_neutral.jpg` all
-derive from one photo, and if some land in train while others land in test, the model is scored on
-recognising a *photograph it has already seen*, not on recognising Taps. That inflates accuracy to
-near-perfect and tells us nothing.
-
-So every split here is grouped by `source_file`: all rows derived from one recording or photo stay
-on the same side of the split. With 3 photos per member, a 3-fold grouped CV holds out one whole
-expression per member per fold — the model must recognise Taps smiling having only ever trained on
-Taps neutral and surprised. That is the question we actually care about, and the resulting numbers
-are lower and real.
+Every split is grouped by source_file. Augmentations of one photo are not independent samples, so
+if some land in train and others in test the model is scored on recognising a photo it has already
+seen, which reads near perfect and means nothing.
 """
 
 from __future__ import annotations
@@ -36,8 +26,6 @@ from .decision import ModalityResult
 
 @dataclass(frozen=True)
 class Metrics:
-    """Cross-validated performance. Reported per model for rubric criterion 8."""
-
     accuracy: float
     f1_macro: float
     log_loss: float
@@ -61,12 +49,12 @@ class BiometricModel:
         group_column: str = "source_file",
         n_estimators: int = 300,
         random_state: int = 42,
-    ):
-        self.feature_columns = feature_columns
-        self.label_column = label_column
-        self.group_column = group_column
-        self.n_estimators = n_estimators
-        self.random_state = random_state
+    ) -> None:
+        self.feature_columns: list[str] = feature_columns
+        self.label_column: str = label_column
+        self.group_column: str = group_column
+        self.n_estimators: int = n_estimators
+        self.random_state: int = random_state
         self.classes_: list[str] = []
         self._clf: RandomForestClassifier | None = None
 
@@ -74,16 +62,15 @@ class BiometricModel:
         return RandomForestClassifier(
             n_estimators=self.n_estimators,
             random_state=self.random_state,
-            # The dataset is tiny and perfectly balanced by construction; leaving trees
-            # unpruned is fine and keeps probability estimates from collapsing to 0/1.
-            min_samples_leaf=1,
             n_jobs=-1,
         )
 
     def _xy(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         missing = [c for c in self.feature_columns if c not in df.columns]
         if missing:
-            raise ValueError(f"Feature table is missing {len(missing)} column(s), e.g. {missing[:5]}")
+            raise ValueError(
+                f"Feature table is missing {len(missing)} column(s), e.g. {missing[:5]}"
+            )
         return df[self.feature_columns].to_numpy(), df[self.label_column].to_numpy()
 
     def fit(self, df: pd.DataFrame) -> "BiometricModel":
@@ -94,11 +81,7 @@ class BiometricModel:
         return self
 
     def predict(self, features: np.ndarray) -> ModalityResult:
-        """Identify one sample. Confidence is the winning class probability.
-
-        The caller (`decision.authenticate`) applies the confidence floor that turns a weak
-        match into a rejection — this method never decides access, it only reports a verdict.
-        """
+        """Identify one sample. The caller applies the confidence floor, not this method."""
         if self._clf is None:
             raise RuntimeError("Model is not fitted; call fit() first")
 
@@ -109,11 +92,13 @@ class BiometricModel:
             )
 
         proba = self._clf.predict_proba(features)[0]
-        idx = int(np.argmax(proba))
-        return ModalityResult(identity=str(self._clf.classes_[idx]), confidence=float(proba[idx]))
+        best = int(np.argmax(proba))
+        return ModalityResult(
+            identity=str(self._clf.classes_[best]),
+            confidence=float(proba[best]),
+        )
 
     def cross_validate(self, df: pd.DataFrame, n_folds: int | None = None) -> Metrics:
-        """Grouped cross-validation — augmentations of one source never span the split."""
         X, y = self._xy(df)
         groups = df[self.group_column].to_numpy()
         labels = sorted(set(y))
@@ -121,24 +106,25 @@ class BiometricModel:
         n_groups = len(set(groups))
         if n_groups < 2:
             raise ValueError(
-                f"Need at least 2 distinct {self.group_column} values to cross-validate; got {n_groups}"
+                f"Need at least 2 distinct {self.group_column} values to cross-validate; "
+                f"got {n_groups}"
             )
 
-        # The fold count is limited by the *least-represented member*, not the total group count.
-        # A member with 2 clips can support a 2-fold split (train on one phrase, test on the
-        # other) and no more — asking for more folds than that risks a fold with no training
-        # example of them at all. Images give 3 per member, audio 2, so this lands on 3 and 2.
+        # The fold count is limited by the least represented member, not the total group count.
+        # A member with 2 clips supports a 2-fold split and no more. Images give 3, audio 2.
         per_member = pd.Series(y).groupby(pd.Series(groups)).first().value_counts().min()
         if n_folds is None:
             n_folds = min(3, int(per_member))
         n_folds = max(2, min(n_folds, n_groups))
 
-        y_true, y_pred, y_proba = [], [], []
-        for fold, (train_idx, test_idx) in enumerate(GroupKFold(n_splits=n_folds).split(X, y, groups)):
-            # Our groups are equal-sized, so folds come out label-balanced. That stops being true
-            # the moment a source drops out (e.g. a photo where face detection fails), and a fold
-            # whose training set is missing a member makes that member unpredictable and the
-            # metrics meaningless. Fail loudly rather than report a quietly wrong number.
+        y_true: list[str] = []
+        y_pred: list[str] = []
+        y_proba: list[np.ndarray] = []
+
+        splitter = GroupKFold(n_splits=n_folds)
+        for fold, (train_idx, test_idx) in enumerate(splitter.split(X, y, groups)):
+            # A fold that trains without a member makes them unpredictable and the metrics junk.
+            # Equal sized groups normally prevent this, but a dropped sample breaks that.
             train_labels = set(y[train_idx])
             if train_labels != set(labels):
                 raise ValueError(
@@ -150,7 +136,7 @@ class BiometricModel:
             clf = self._new_clf().fit(X[train_idx], y[train_idx])
             fold_proba = clf.predict_proba(X[test_idx])
 
-            # Align columns to the global label set so log_loss sees consistent classes.
+            # Align to the global label set so log_loss sees consistent classes.
             proba = np.zeros((len(test_idx), len(labels)))
             for j, cls in enumerate(clf.classes_):
                 proba[:, labels.index(cls)] = fold_proba[:, j]
@@ -178,14 +164,11 @@ class BiometricModel:
         return joblib.load(path)
 
 
-# --- the two concrete models --------------------------------------------
-
-
 def face_model() -> BiometricModel:
-    """Recognise a member from their face. Trained on Taps's image_features.csv."""
+    """Recognise a member from their face. Trained on image_features.csv."""
     return BiometricModel(feature_columns=schemas.IMAGE_FEATURE_COLUMNS)
 
 
 def voice_model() -> BiometricModel:
-    """Verify a member from their voiceprint. Trained on Tedla's audio_features.csv."""
+    """Verify a member from their voiceprint. Trained on audio_features.csv."""
     return BiometricModel(feature_columns=schemas.AUDIO_FEATURE_COLUMNS)

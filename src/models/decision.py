@@ -1,17 +1,8 @@
-"""The multimodal authentication gate.
+"""The multimodal authentication gate: face, then voice, then a recommendation.
 
-Implements the flow from the assignment diagram: face first, then voice, then (and only then) a
-product recommendation. Both checkpoints must pass, and they must agree with each other.
-
-The design point worth stating in the report: this is not two independent gates. Two independent
-gates would accept any known face plus any known voice, so Taps's face with Tedla's voice would
-unlock Taps's recommendations. The cross-modal consistency check in `authenticate` — the voice
-must identify the *same* member the face did — is what makes the decision genuinely multimodal
-rather than a pair of unimodal checks in a row.
-
-This module holds no model code on purpose. It takes each modality's verdict as a plain
-`ModalityResult`, so the policy can be tested exhaustively without training anything, and the
-face/voice models can change freely underneath it.
+This is not two independent gates. Two independent gates would accept any known face plus any
+known voice, so one member's face with another's voice would unlock the first member's
+recommendations. Both modalities must identify the same person.
 """
 
 from __future__ import annotations
@@ -21,11 +12,10 @@ from enum import Enum
 
 from .. import config
 
-# Confidence floors. Below these, a prediction is treated as "no match" even if it is the
-# argmax — with 4 candidate identities the argmax is never worse than chance, so an unknown
-# face will always be *some* member unless we impose a floor.
-FACE_THRESHOLD = 0.60
-VOICE_THRESHOLD = 0.60
+# With 4 candidates the argmax is always someone, so an unknown face still resolves to a member.
+# These floors are what make "no match" possible at all.
+FACE_THRESHOLD: float = 0.60
+VOICE_THRESHOLD: float = 0.60
 
 
 class Stage(str, Enum):
@@ -36,7 +26,7 @@ class Stage(str, Enum):
 
 @dataclass(frozen=True)
 class ModalityResult:
-    """One model's verdict. `identity` is the predicted member, or None if no match."""
+    """One model's verdict. identity is the predicted member, or None if no match."""
 
     identity: str | None
     confidence: float
@@ -45,7 +35,7 @@ class ModalityResult:
 @dataclass(frozen=True)
 class Decision:
     granted: bool
-    stage: Stage  # where it was granted, or the checkpoint it failed at
+    stage: Stage
     reason: str
     identity: str | None = None
     customer_id: str | None = None
@@ -79,6 +69,7 @@ def check_face(
             f"recognised {face.identity} but they have no linked customer record",
             identity=face.identity,
         )
+
     return None
 
 
@@ -87,14 +78,13 @@ def check_voice(
     face_identity: str,
     threshold: float = VOICE_THRESHOLD,
 ) -> Decision | None:
-    """Checkpoint 2, including the cross-modal check. Returns a denial, or None if it passes.
-
-    Takes the face's identity because the voice is not judged in isolation — it must agree with
-    what the face already claimed.
-    """
+    """Checkpoint 2. Takes the face's identity because the voice must agree with it."""
     if voice.identity is None or voice.identity == config.UNKNOWN:
         return Decision(
-            False, Stage.VOICE, "voice did not match any approved voiceprint", identity=face_identity
+            False,
+            Stage.VOICE,
+            "voice did not match any approved voiceprint",
+            identity=face_identity,
         )
 
     if voice.confidence < threshold:
@@ -112,6 +102,7 @@ def check_voice(
             f"identity mismatch: face says {face_identity}, voice says {voice.identity}",
             identity=face_identity,
         )
+
     return None
 
 
@@ -132,17 +123,12 @@ def authenticate(
     face_threshold: float = FACE_THRESHOLD,
     voice_threshold: float = VOICE_THRESHOLD,
 ) -> Decision:
-    """Run both checkpoints and resolve the member to a customer.
-
-    Returns a Decision carrying the customer_id to feed the product model when granted, or the
-    checkpoint that rejected the attempt when not. The CLI drives `check_face` / `check_voice`
-    directly so it can stop before asking for a voice; this composes them for everything else.
-    """
+    """Run both checkpoints. The CLI calls the checks directly so it can stop before the voice."""
     denied = check_face(face, registry, face_threshold)
     if denied is not None:
         return denied
 
-    assert face.identity is not None  # check_face guarantees this
+    assert face.identity is not None
     denied = check_voice(voice, face.identity, voice_threshold)
     if denied is not None:
         return denied
