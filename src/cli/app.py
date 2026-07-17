@@ -123,10 +123,9 @@ def build_default_app() -> AuthApp:
     from ..models.registry import load_registry
     from .. import config
 
-    models = config.DATA / "models"
     return AuthApp(
-        face_model=BiometricModel.load(models / "face.joblib"),
-        voice_model=BiometricModel.load(models / "voice.joblib"),
+        face_model=BiometricModel.load(config.FACE_MODEL_PATH),
+        voice_model=BiometricModel.load(config.VOICE_MODEL_PATH),
         recommender=StubRecommender(),
         registry=load_registry(),
         image_extractor=extract_image_features,

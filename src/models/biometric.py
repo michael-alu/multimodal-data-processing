@@ -119,14 +119,19 @@ class BiometricModel:
         labels = sorted(set(y))
 
         n_groups = len(set(groups))
-        if n_folds is None:
-            # One fold per distinct source per member, capped by what the data supports.
-            n_folds = min(3, n_groups)
         if n_groups < 2:
             raise ValueError(
                 f"Need at least 2 distinct {self.group_column} values to cross-validate; got {n_groups}"
             )
-        n_folds = min(n_folds, n_groups)
+
+        # The fold count is limited by the *least-represented member*, not the total group count.
+        # A member with 2 clips can support a 2-fold split (train on one phrase, test on the
+        # other) and no more — asking for more folds than that risks a fold with no training
+        # example of them at all. Images give 3 per member, audio 2, so this lands on 3 and 2.
+        per_member = pd.Series(y).groupby(pd.Series(groups)).first().value_counts().min()
+        if n_folds is None:
+            n_folds = min(3, int(per_member))
+        n_folds = max(2, min(n_folds, n_groups))
 
         y_true, y_pred, y_proba = [], [], []
         for fold, (train_idx, test_idx) in enumerate(GroupKFold(n_splits=n_folds).split(X, y, groups)):

@@ -17,10 +17,14 @@ RAW_TABULAR = DATA / "raw" / "tabular"
 
 PROCESSED = DATA / "processed"
 FEATURES = DATA / "features"
+MODELS = DATA / "models"
 
 IMAGE_FEATURES_CSV = FEATURES / "image_features.csv"
 AUDIO_FEATURES_CSV = FEATURES / "audio_features.csv"
 MERGED_CSV = PROCESSED / "merged_dataset.csv"
+
+FACE_MODEL_PATH = MODELS / "face.joblib"
+VOICE_MODEL_PATH = MODELS / "voice.joblib"
 
 # --- identities ----------------------------------------------------------
 
