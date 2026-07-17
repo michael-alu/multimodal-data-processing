@@ -138,6 +138,55 @@ def test_fold_that_trains_without_a_member_is_rejected():
         _model().cross_validate(thin, n_folds=3)
 
 
+# --- the unknown identity ------------------------------------------------
+
+
+def _with_unknown(n_sources):
+    """The team plus a fifth identity trained as a real class."""
+    df = _table(member_signal=3.0, source_signal=0.3)
+    rng = np.random.default_rng(99)
+    centre = rng.normal(0, 1, len(FEATS)) * 3.0
+    rows = []
+    for s in range(n_sources):
+        for a in range(6):
+            vec = centre + rng.normal(0, 0.4, len(FEATS))
+            row = {
+                "member": config.UNKNOWN,
+                "source_file": f"unknown_src{s}.jpg",
+                "augmentation": f"aug{a}",
+            }
+            row.update(dict(zip(FEATS, vec)))
+            rows.append(row)
+    return pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+
+
+def test_unknown_trained_as_a_class_is_predicted_and_denied():
+    """This is what makes the unauthorized demo deterministic instead of threshold luck."""
+    from src.models.decision import check_face
+
+    registry = {m: f"C{i:03d}" for i, m in enumerate(config.MEMBERS)}
+    df = _with_unknown(3)
+    model = _model().fit(df)
+
+    intruders = df[df["member"] == config.UNKNOWN][FEATS].to_numpy()
+    for vec in intruders[:10]:
+        result = model.predict(vec)
+        assert result.identity == config.UNKNOWN
+        assert check_face(result, registry) is not None, "an unknown face must be denied"
+
+
+def test_a_single_unknown_photo_is_rejected_not_silently_mis_evaluated():
+    """One unknown photo cannot support the split. Better to fail than to score nonsense."""
+    with pytest.raises(ValueError, match="trains without"):
+        _model().cross_validate(_with_unknown(1))
+
+
+def test_three_unknown_photos_keep_the_face_model_at_three_folds():
+    """The fold count follows the least represented identity, so the intruder needs 3 photos too."""
+    assert _model().cross_validate(_with_unknown(2)).n_folds == 2
+    assert _model().cross_validate(_with_unknown(3)).n_folds == 3
+
+
 # --- persistence and wiring ---------------------------------------------
 
 
