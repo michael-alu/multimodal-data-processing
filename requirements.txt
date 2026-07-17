@@ -16,3 +16,5 @@ xgboost
 
 librosa
 soundfile
+
+pytest
