@@ -1,7 +1,4 @@
-"""Decision-table coverage for the multimodal gate.
-
-The gate is pure policy over two verdicts, so every path is reachable without a trained model.
-"""
+"""Decision table coverage for the multimodal gate."""
 
 import pandas as pd
 import pytest
