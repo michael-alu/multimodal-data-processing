@@ -56,27 +56,20 @@ class Decision:
         return f"{verdict}{who} at {self.stage.value}: {self.reason}"
 
 
-def authenticate(
+def check_face(
     face: ModalityResult,
-    voice: ModalityResult,
     registry: dict[str, str],
-    face_threshold: float = FACE_THRESHOLD,
-    voice_threshold: float = VOICE_THRESHOLD,
-) -> Decision:
-    """Run the two checkpoints and resolve the member to a customer.
-
-    Returns a Decision carrying the customer_id to feed the product model when granted, or the
-    checkpoint that rejected the attempt when not.
-    """
-    # --- checkpoint 1: is this a face we know? ---------------------------
+    threshold: float = FACE_THRESHOLD,
+) -> Decision | None:
+    """Checkpoint 1. Returns a denial, or None if the face passes."""
     if face.identity is None or face.identity == config.UNKNOWN:
         return Decision(False, Stage.FACE, "face did not match any known user")
 
-    if face.confidence < face_threshold:
+    if face.confidence < threshold:
         return Decision(
             False,
             Stage.FACE,
-            f"face match too weak ({face.confidence:.2f} < {face_threshold:.2f})",
+            f"face match too weak ({face.confidence:.2f} < {threshold:.2f})",
         )
 
     if face.identity not in registry:
@@ -86,34 +79,72 @@ def authenticate(
             f"recognised {face.identity} but they have no linked customer record",
             identity=face.identity,
         )
+    return None
 
-    # --- checkpoint 2: is this an approved voice? ------------------------
+
+def check_voice(
+    voice: ModalityResult,
+    face_identity: str,
+    threshold: float = VOICE_THRESHOLD,
+) -> Decision | None:
+    """Checkpoint 2, including the cross-modal check. Returns a denial, or None if it passes.
+
+    Takes the face's identity because the voice is not judged in isolation — it must agree with
+    what the face already claimed.
+    """
     if voice.identity is None or voice.identity == config.UNKNOWN:
         return Decision(
-            False, Stage.VOICE, "voice did not match any approved voiceprint", identity=face.identity
+            False, Stage.VOICE, "voice did not match any approved voiceprint", identity=face_identity
         )
 
-    if voice.confidence < voice_threshold:
+    if voice.confidence < threshold:
         return Decision(
             False,
             Stage.VOICE,
-            f"voice match too weak ({voice.confidence:.2f} < {voice_threshold:.2f})",
-            identity=face.identity,
+            f"voice match too weak ({voice.confidence:.2f} < {threshold:.2f})",
+            identity=face_identity,
         )
 
-    # --- the multimodal check: do the two modalities agree? --------------
-    if voice.identity != face.identity:
+    if voice.identity != face_identity:
         return Decision(
             False,
             Stage.VOICE,
-            f"identity mismatch: face says {face.identity}, voice says {voice.identity}",
-            identity=face.identity,
+            f"identity mismatch: face says {face_identity}, voice says {voice.identity}",
+            identity=face_identity,
         )
+    return None
 
+
+def grant(face_identity: str, registry: dict[str, str]) -> Decision:
     return Decision(
         True,
         Stage.GRANTED,
-        f"face and voice both confirm {face.identity}",
-        identity=face.identity,
-        customer_id=registry[face.identity],
+        f"face and voice both confirm {face_identity}",
+        identity=face_identity,
+        customer_id=registry[face_identity],
     )
+
+
+def authenticate(
+    face: ModalityResult,
+    voice: ModalityResult,
+    registry: dict[str, str],
+    face_threshold: float = FACE_THRESHOLD,
+    voice_threshold: float = VOICE_THRESHOLD,
+) -> Decision:
+    """Run both checkpoints and resolve the member to a customer.
+
+    Returns a Decision carrying the customer_id to feed the product model when granted, or the
+    checkpoint that rejected the attempt when not. The CLI drives `check_face` / `check_voice`
+    directly so it can stop before asking for a voice; this composes them for everything else.
+    """
+    denied = check_face(face, registry, face_threshold)
+    if denied is not None:
+        return denied
+
+    assert face.identity is not None  # check_face guarantees this
+    denied = check_voice(voice, face.identity, voice_threshold)
+    if denied is not None:
+        return denied
+
+    return grant(face.identity, registry)
