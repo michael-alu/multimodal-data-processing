@@ -94,3 +94,37 @@ def validate_audio_features(df: pd.DataFrame) -> None:
     bad_phrases = set(df["phrase"]) - set(config.PHRASES)
     if bad_phrases:
         raise ValueError(f"audio: unrecognised phrase(s): {sorted(bad_phrases)}")
+
+
+# --- merged_dataset.csv ---
+#
+# FOR ANTHONY: the merge only has to guarantee these two columns. Everything else it carries
+# becomes a feature automatically, so add whatever the join produces.
+
+MERGED_ID_COLUMN: str = "customer_id"
+MERGED_TARGET_COLUMN: str = "product"
+
+
+def validate_merged(df: pd.DataFrame) -> None:
+    for col in (MERGED_ID_COLUMN, MERGED_TARGET_COLUMN):
+        if col not in df.columns:
+            raise ValueError(
+                f"merged: required column {col!r} is missing; got {list(df.columns)[:10]}"
+            )
+
+    if df.empty:
+        raise ValueError("merged: no rows")
+
+    for col in (MERGED_ID_COLUMN, MERGED_TARGET_COLUMN):
+        if df[col].isna().any():
+            raise ValueError(f"merged: {df[col].isna().sum()} null value(s) in {col!r}")
+
+    n_products = df[MERGED_TARGET_COLUMN].nunique()
+    if n_products < 2:
+        raise ValueError(
+            f"merged: need at least 2 distinct products to train a classifier, got {n_products}"
+        )
+
+    n_features = len(set(df.columns) - {MERGED_ID_COLUMN, MERGED_TARGET_COLUMN})
+    if n_features == 0:
+        raise ValueError("merged: no feature columns, only the id and the target")

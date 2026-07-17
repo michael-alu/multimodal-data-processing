@@ -9,6 +9,7 @@ import pytest
 
 from src import config, schemas, train
 from src.models.biometric import BiometricModel
+from src.models.recommender import TrainedRecommender
 
 
 def _image_csv(path, seed=0):
@@ -61,9 +62,29 @@ def features(tmp_path):
     return img, aud, tmp_path / "models"
 
 
-def _argv(features):
+def _argv(features, merged=None):
     img, aud, models = features
-    return ["--image-features", str(img), "--audio-features", str(aud), "--models-dir", str(models)]
+    argv = ["--image-features", str(img), "--audio-features", str(aud), "--models-dir", str(models)]
+    if merged is not None:
+        argv += ["--merged", str(merged)]
+    return argv
+
+
+def _merged_csv(path, n_customers=40, seed=2):
+    rng = np.random.default_rng(seed)
+    products = ["Earbuds", "Shoes", "Coffee Maker", "Backpack"]
+    rows = []
+    for i in range(n_customers):
+        product = products[i % len(products)]
+        rows.append({
+            "customer_id": f"C{i:03d}",
+            "age": 20 + products.index(product) * 10 + rng.normal(0, 1.5),
+            "channel": ["web", "app", "store", "web"][products.index(product)],
+            "product": product,
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv(path, index=False)
+    return df
 
 
 # --- the happy path ------------------------------------------------------
@@ -162,3 +183,62 @@ def test_renamed_column_refuses_to_train(features, capsys):
 
     assert train.main(_argv(features)) == 1
     assert "column mismatch" in capsys.readouterr().err
+
+
+# --- the product model ---------------------------------------------------
+
+
+def test_missing_merge_skips_the_product_model_without_failing(features, capsys, tmp_path):
+    """The biometric half must stay usable while Anthony's merge is outstanding."""
+    _, _, models = features
+    assert train.main(_argv(features, merged=tmp_path / "nope.csv")) == 0
+
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out
+    assert "stub recommender" in out
+    assert (models / "face.joblib").exists()
+    assert not (models / "recommender.joblib").exists()
+
+
+def test_product_model_trains_when_the_merge_exists(features, capsys, tmp_path):
+    _, _, models = features
+    merged = tmp_path / "merged_dataset.csv"
+    _merged_csv(merged)
+
+    assert train.main(_argv(features, merged=merged)) == 0
+
+    assert (models / "recommender.joblib").exists()
+    out = capsys.readouterr().out
+    assert "=== product model ===" in out
+    assert "SKIPPED" not in out
+    assert "product" in out
+
+
+def test_all_three_models_appear_in_the_summary_table(features, capsys, tmp_path):
+    merged = tmp_path / "merged_dataset.csv"
+    _merged_csv(merged)
+    train.main(_argv(features, merged=merged))
+
+    summary = capsys.readouterr().out.split("model     accuracy")[-1]
+    for name in ("face", "voice", "product"):
+        assert name in summary, f"{name} missing from the metrics table"
+
+
+def test_broken_merge_fails_loudly(features, capsys, tmp_path):
+    merged = tmp_path / "merged_dataset.csv"
+    _merged_csv(merged).drop(columns=["product"]).to_csv(merged, index=False)
+
+    assert train.main(_argv(features, merged=merged)) == 1
+    assert "required column 'product' is missing" in capsys.readouterr().err
+
+
+def test_saved_recommender_loads_and_recommends(features, tmp_path):
+    _, _, models = features
+    merged = tmp_path / "merged_dataset.csv"
+    df = _merged_csv(merged)
+    train.main(_argv(features, merged=merged))
+
+    model = TrainedRecommender.load(models / "recommender.joblib")
+    rec = model.recommend("C000")
+    assert rec.product in set(df["product"])
+    assert model.is_stub is False

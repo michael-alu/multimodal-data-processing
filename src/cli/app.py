@@ -119,13 +119,19 @@ def build_default_app() -> AuthApp:
     """Wire the app from trained models on disk. Run src/train.py first."""
     from ..audio.extract import extract_audio_features
     from ..images.extract import extract_image_features
-    from ..models.recommender import StubRecommender
+    from ..models.recommender import StubRecommender, TrainedRecommender
     from ..models.registry import load_registry
+
+    recommender: Recommender
+    if config.RECOMMENDER_MODEL_PATH.exists():
+        recommender = TrainedRecommender.load(config.RECOMMENDER_MODEL_PATH)
+    else:
+        recommender = StubRecommender()
 
     return AuthApp(
         face_model=BiometricModel.load(config.FACE_MODEL_PATH),
         voice_model=BiometricModel.load(config.VOICE_MODEL_PATH),
-        recommender=StubRecommender(),
+        recommender=recommender,
         registry=load_registry(),
         image_extractor=extract_image_features,
         audio_extractor=extract_audio_features,

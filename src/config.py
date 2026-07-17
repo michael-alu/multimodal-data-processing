@@ -21,6 +21,7 @@ MERGED_CSV: Path = PROCESSED / "merged_dataset.csv"
 
 FACE_MODEL_PATH: Path = MODELS / "face.joblib"
 VOICE_MODEL_PATH: Path = MODELS / "voice.joblib"
+RECOMMENDER_MODEL_PATH: Path = MODELS / "recommender.joblib"
 
 # --- identities ---
 
