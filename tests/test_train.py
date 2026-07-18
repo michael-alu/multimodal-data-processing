@@ -80,7 +80,7 @@ def _merged_csv(path, n_customers=40, seed=2):
             "customer_id": f"C{i:03d}",
             "age": 20 + products.index(product) * 10 + rng.normal(0, 1.5),
             "channel": ["web", "app", "store", "web"][products.index(product)],
-            "product": product,
+            schemas.MERGED_TARGET_COLUMN: product,
         })
     df = pd.DataFrame(rows)
     df.to_csv(path, index=False)
@@ -226,10 +226,10 @@ def test_all_three_models_appear_in_the_summary_table(features, capsys, tmp_path
 
 def test_broken_merge_fails_loudly(features, capsys, tmp_path):
     merged = tmp_path / "merged_dataset.csv"
-    _merged_csv(merged).drop(columns=["product"]).to_csv(merged, index=False)
+    _merged_csv(merged).drop(columns=[schemas.MERGED_TARGET_COLUMN]).to_csv(merged, index=False)
 
     assert train.main(_argv(features, merged=merged)) == 1
-    assert "required column 'product' is missing" in capsys.readouterr().err
+    assert "required column 'product_category' is missing" in capsys.readouterr().err
 
 
 def test_saved_recommender_loads_and_recommends(features, tmp_path):
@@ -240,5 +240,5 @@ def test_saved_recommender_loads_and_recommends(features, tmp_path):
 
     model = TrainedRecommender.load(models / "recommender.joblib")
     rec = model.recommend("C000")
-    assert rec.product in set(df["product"])
+    assert rec.product in set(df[schemas.MERGED_TARGET_COLUMN])
     assert model.is_stub is False

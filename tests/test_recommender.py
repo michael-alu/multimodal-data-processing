@@ -30,7 +30,7 @@ def _merged(n_customers=60, rows_per_customer=1, seed=0):
                 "age": 20 + PRODUCTS.index(product) * 10 + rng.normal(0, 1.5),
                 "spend": 100 + PRODUCTS.index(product) * 50 + rng.normal(0, 8),
                 "channel": ["web", "app", "store", "web"][PRODUCTS.index(product)],
-                "product": product,
+                schemas.MERGED_TARGET_COLUMN: product,
             })
     return pd.DataFrame(rows)
 
@@ -66,7 +66,7 @@ def test_recommendation_matches_the_customers_actual_product():
     model = TrainedRecommender().fit(df)
     hits = 0
     for cid in df["customer_id"].unique():
-        expected = df[df["customer_id"] == cid]["product"].iloc[-1]
+        expected = df[df["customer_id"] == cid][schemas.MERGED_TARGET_COLUMN].iloc[-1]
         if model.recommend(cid).product == expected:
             hits += 1
     assert hits / df["customer_id"].nunique() > 0.9
@@ -94,7 +94,7 @@ def test_categorical_columns_are_encoded_not_crashed():
 def test_id_and_target_are_never_used_as_features():
     """Leaking the target into the features would score perfectly and mean nothing."""
     model = TrainedRecommender().fit(_merged())
-    assert not any("product" in c for c in model.encoded_columns_)
+    assert not any(schemas.MERGED_TARGET_COLUMN in c for c in model.encoded_columns_)
     assert "customer_id" not in model.encoded_columns_
 
 
@@ -120,7 +120,7 @@ def test_repeat_customers_do_not_span_the_split():
 
     df = _merged(n_customers=20, rows_per_customer=3)
     groups = df["customer_id"].to_numpy()
-    for train_idx, test_idx in GroupKFold(n_splits=5).split(df, df["product"], groups):
+    for train_idx, test_idx in GroupKFold(n_splits=5).split(df, df[schemas.MERGED_TARGET_COLUMN], groups):
         assert not set(groups[train_idx]) & set(groups[test_idx])
 
 
@@ -128,8 +128,8 @@ def test_repeat_customers_do_not_span_the_split():
 
 
 def test_missing_target_column_is_rejected():
-    df = _merged().drop(columns=["product"])
-    with pytest.raises(ValueError, match="required column 'product' is missing"):
+    df = _merged().drop(columns=[schemas.MERGED_TARGET_COLUMN])
+    with pytest.raises(ValueError, match="required column 'product_category' is missing"):
         TrainedRecommender().fit(df)
 
 
@@ -141,20 +141,20 @@ def test_missing_id_column_is_rejected():
 
 def test_null_target_is_rejected():
     df = _merged()
-    df.loc[0, "product"] = None
+    df.loc[0, schemas.MERGED_TARGET_COLUMN] = None
     with pytest.raises(ValueError, match="null value"):
         TrainedRecommender().fit(df)
 
 
 def test_single_product_is_rejected():
     df = _merged()
-    df["product"] = "Earbuds"
+    df[schemas.MERGED_TARGET_COLUMN] = "Earbuds"
     with pytest.raises(ValueError, match="at least 2 distinct products"):
         TrainedRecommender().fit(df)
 
 
 def test_dataset_with_no_features_is_rejected():
-    df = _merged()[["customer_id", "product"]]
+    df = _merged()[["customer_id", schemas.MERGED_TARGET_COLUMN]]
     with pytest.raises(ValueError, match="no feature columns"):
         TrainedRecommender().fit(df)
 

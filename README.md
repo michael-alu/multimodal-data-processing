@@ -151,9 +151,11 @@ Three files are the interfaces the four tracks agree on. Change them only after 
 - **`schemas.IMAGE_COLUMNS`** (392): 4 metadata columns, 64 histogram bins, 324 HOG features.
 - **`schemas.AUDIO_COLUMNS`** (38): 4 metadata columns, 13 MFCC means and 13 stds, then spectral
   roll-off, centroid, RMS energy and zero crossing rate as mean and std.
-- **`schemas.validate_merged`**: the merge must produce a `customer_id` column and a `product`
-  column. Everything else it carries becomes a model feature automatically, including text columns,
-  which get one-hot encoded.
+- **`schemas.validate_merged`**: the merge must produce a `customer_id` column and a
+  `product_category` column. Everything else it carries becomes a model feature automatically,
+  including text columns, which get one-hot encoded. The two sources share no key, so the join
+  strips the `A` prefix from `customer_id_new` and matches it against `customer_id_legacy`; see
+  `src/tabular/merge.py` for the reasoning and the fan-out it avoids.
 
 `src/images/extract.py` and `src/audio/extract.py` each hold one function to implement. They are
 called both to build the feature CSVs and by the CLI at demo time to featurise a photo or clip the

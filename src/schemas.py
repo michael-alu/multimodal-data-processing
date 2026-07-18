@@ -98,11 +98,11 @@ def validate_audio_features(df: pd.DataFrame) -> None:
 
 # --- merged_dataset.csv ---
 #
-# FOR ANTHONY: the merge only has to guarantee these two columns. Everything else it carries
-# becomes a feature automatically, so add whatever the join produces.
+# The merge must guarantee these two columns. Everything else it carries becomes a feature
+# automatically. customer_id is canonical: the raw data has no shared key, see src/tabular/merge.py.
 
 MERGED_ID_COLUMN: str = "customer_id"
-MERGED_TARGET_COLUMN: str = "product"
+MERGED_TARGET_COLUMN: str = "product_category"
 
 
 def validate_merged(df: pd.DataFrame) -> None:
