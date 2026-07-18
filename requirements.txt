@@ -4,7 +4,7 @@
 # (no cp310 / macOS-x86_64 wheel exists), falls back to a source build, and fails without a
 # full LLVM toolchain. Forcing wheels makes the resolver backtrack to llvmlite 0.45.1.
 
-numpy==1.26.4          # hard pin <2.0 — tensorflow 2.16.2 in this environment breaks on numpy 2.x
+numpy==1.26.4          # hard pin <2.0, tensorflow 2.16.2 in this environment breaks on numpy 2.x
 opencv-python<5        # opencv 5.x requires numpy 2.x, which conflicts with the pin above
 
 pandas
@@ -16,3 +16,5 @@ xgboost
 
 librosa
 soundfile
+
+pytest
