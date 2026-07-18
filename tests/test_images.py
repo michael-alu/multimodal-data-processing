@@ -123,8 +123,16 @@ def test_photos_without_a_face_are_skipped_not_fatal(tmp_path, face_bgr, capsys)
 
 
 def test_empty_directory_raises(tmp_path):
-    with pytest.raises(FileNotFoundError, match="no .jpg"):
+    with pytest.raises(FileNotFoundError, match="no images"):
         pipeline.build_image_features(tmp_path)
+
+
+def test_png_images_are_picked_up(tmp_path, face_bgr):
+    for e in config.EXPRESSIONS:
+        cv2.imwrite(str(tmp_path / f"taps_{e}.png"), face_bgr)
+    df = pipeline.build_image_features(tmp_path)
+    assert set(df["member"]) == {"taps"}
+    assert all(f.endswith(".png") for f in df["source_file"])
 
 
 def test_main_writes_the_csv(tmp_path, face_bgr):

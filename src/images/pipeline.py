@@ -67,11 +67,14 @@ def _parse_name(filename: str) -> tuple[str, str]:
     return member, expression
 
 
+IMAGE_EXTENSIONS = ("*.jpg", "*.jpeg", "*.png")
+
+
 def build_image_features(raw_dir: Path) -> pd.DataFrame:
     """Extract features for every photo and augmentation into one DataFrame."""
-    paths = sorted(raw_dir.glob("*.jpg"))
+    paths = sorted(p for pattern in IMAGE_EXTENSIONS for p in raw_dir.glob(pattern))
     if not paths:
-        raise FileNotFoundError(f"no .jpg images in {raw_dir}")
+        raise FileNotFoundError(f"no images ({', '.join(IMAGE_EXTENSIONS)}) in {raw_dir}")
 
     rows = []
     skipped = []
