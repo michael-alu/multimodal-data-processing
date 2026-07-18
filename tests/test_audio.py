@@ -9,7 +9,7 @@ import pytest
 import soundfile as sf
 
 from src import config, schemas
-from src.audio import extract, pipeline
+from src.audio import extract, pipeline, visualize
 from src.audio.extract import AudioTooShort
 from src.models.biometric import voice_model
 
@@ -132,3 +132,35 @@ def test_extracted_features_train_the_voice_model(tmp_path):
     result = model.predict(sample)
     assert result.identity in config.MEMBERS
     assert 0.0 <= result.confidence <= 1.0
+
+
+# --- waveform and spectrogram visualization ---
+
+
+def test_plot_member_saves_a_figure(tmp_path):
+    for phrase in config.PHRASES:
+        sf.write(tmp_path / f"taps_{phrase}.wav", _tone(200.0), SR)
+    out = visualize.plot_member("taps", tmp_path, tmp_path)
+    assert out is not None and out.exists()
+
+
+def test_plot_member_returns_none_when_no_clips(tmp_path):
+    assert visualize.plot_member("taps", tmp_path, tmp_path) is None
+
+
+def test_visualize_main_saves_one_figure_per_identity(tmp_path):
+    raw = tmp_path / "raw"
+    out = tmp_path / "figs"
+    raw.mkdir()
+    for m in config.MEMBERS:
+        for phrase in config.PHRASES:
+            sf.write(raw / f"{m}_{phrase}.wav", _tone(200.0), SR)
+
+    assert visualize.main(["--raw-dir", str(raw), "--out-dir", str(out)]) == 0
+    saved = list(out.glob("audio_*.png"))
+    assert len(saved) == len(config.MEMBERS)
+
+
+def test_visualize_main_raises_on_empty_dir(tmp_path):
+    with pytest.raises(FileNotFoundError, match="no audio clips"):
+        visualize.main(["--raw-dir", str(tmp_path), "--out-dir", str(tmp_path)])
